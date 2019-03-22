@@ -1,0 +1,21 @@
+{
+    "_id": "_monitoring__kibana-sidecar_logs",
+    "_type": "search",
+    "_source": {
+        "title": "[Monitoring] kibana-sidecar logs",
+        "description": "",
+        "hits": 0,
+        "columns": [
+            "level",
+            "message"
+        ],
+        "sort": [
+            "@timestamp",
+            "desc"
+        ],
+        "version": 1,
+        "kibanaSavedObjectMeta": {
+            "searchSourceJSON": "{\"index\":\"filebeat-*\",\"highlightAll\":true,\"version\":true,\"query\":{\"query\":\"*\",\"language\":\"lucene\"},\"filter\":[{\"meta\":{\"index\":\"filebeat-*\",\"negate\":false,\"disabled\":false,\"alias\":null,\"type\":\"phrase\",\"key\":\"kubernetes.labels.app_kubernetes_io_name\",\"value\":\"kibana-sidecar\",\"params\":{\"query\":\"kibana-sidecar\",\"type\":\"phrase\"}},\"query\":{\"match\":{\"kubernetes.labels.app_kubernetes_io_name\":{\"query\":\"kibana-sidecar\",\"type\":\"phrase\"}}},\"$state\":{\"store\":\"appState\"}}]}"
+        }
+    }
+}
