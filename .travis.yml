@@ -5,6 +5,7 @@ services:
 before_install:
   - imageTag=$(git show --quiet --pretty=format:%cd-%h --date=format-local:%Y%m%d.%H%M%S)
   - docker build -t inmoment/kibana-sidecar:$imageTag .
+  - docker tag inmoment/kibana-sidecar:$imageTag inmoment/kibana-sidecar:latest
 
 deploy:
   skip_cleanup: true
