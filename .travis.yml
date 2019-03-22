@@ -1,0 +1,12 @@
+services:
+  - docker
+
+before_install:
+  - imageTag=$(git show --quiet --pretty=format:%cd-%h --date=format-local:%Y%m%d.%H%M%S)
+  - docker build -t inmoment/kibana-sidecar:$imageTag .
+
+deploy:
+  provider: script
+  script: bash docker-push.sh "$imageTag"
+  on:
+    branch: master
