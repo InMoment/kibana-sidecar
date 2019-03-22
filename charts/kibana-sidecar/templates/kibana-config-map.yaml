@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kibana-sidecar.fullname" . }}-kibana-dashboard
+  labels:
+    kibana_object: "1"
+    generate_id_from_title: "true"
+data:
+  {{- $file := .Files }}
+  {{- $instanceName := .Release.Name -}}
+
+  {{- range $path, $byte := .Files.Glob "ops-viz/kibana/*.json" }}
+    {{- $list := $path | splitList "/"}}
+    {{- $length := len $list }}
+    {{- $last := add $length -1 }}
+    {{- /*
+      This printf line must be indented only once from `data:` so it gets formatted correctly
+      */ -}}
+
+  {{ printf "" }}
+  {{ printf "%s_%s" $instanceName (index $list $last) }}: |-
+
+    {{- range $line := $file.Lines $path }}
+    {{- $line := $line | replace "$(instance_name)" $instanceName }}
+    {{ $line }}
+    {{- end }}
+  {{- end }}
+  {{- /*
+   in the lines within the range, the $() is used to replace template tokens that we inserted during our templatizing
+   */ -}}

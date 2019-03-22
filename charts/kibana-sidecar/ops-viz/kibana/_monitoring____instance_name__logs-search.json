@@ -1,0 +1,21 @@
+{
+    "_id": "1eaacfa0-3092-11e9-af92-4d223781ce9b",
+    "_type": "search",
+    "_source": {
+        "title": "[Monitoring] $(instance_name) logs",
+        "description": "",
+        "hits": 0,
+        "columns": [
+            "level",
+            "message"
+        ],
+        "sort": [
+            "@timestamp",
+            "desc"
+        ],
+        "version": 1,
+        "kibanaSavedObjectMeta": {
+            "searchSourceJSON": "{\"index\":\"filebeat-*\",\"highlightAll\":true,\"version\":true,\"query\":{\"language\":\"lucene\",\"query\":\"*\"},\"filter\":[{\"meta\":{\"index\":\"filebeat-*\",\"negate\":false,\"disabled\":false,\"alias\":null,\"type\":\"phrase\",\"key\":\"kubernetes.labels.app_kubernetes_io_instance\",\"value\":\"$(instance_name)\",\"params\":{\"query\":\"$(instance_name)\",\"type\":\"phrase\"}},\"query\":{\"match\":{\"kubernetes.labels.app_kubernetes_io_instance\":{\"query\":\"$(instance_name)\",\"type\":\"phrase\"}}},\"$state\":{\"store\":\"appState\"}}]}"
+        }
+    }
+}

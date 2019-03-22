@@ -1,0 +1,90 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: kibana-sidecar
+  labels:
+    app: kibana-sidecar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana-sidecar
+  template:
+    metadata:
+        labels:
+          app: kibana-sidecar
+    spec:
+      serviceAccountName: kibana-sidecar-account
+      containers:
+      - name: sidecar
+        image: kibana-sidecar:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: LABEL
+          value: "kibana_object"
+        - name: KIBANA_BASE_URL
+          value: http://mykibana:9090
+        - name: NAMESPACE
+          value: "" # Or a specific namespace or ALL
+        - name: LOGLEVEL
+            value: "INFO"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sample-kibana-configmap
+  labels:
+    kibana_object: "1"
+    generate_id_from_title: "true"
+data:
+  8c9a3a60-2024-11e9-997c-d152158bf5aa: |-
+    {
+      "_id": "8c9a3a60-2024-11e9-997c-d152158bf5aa",
+      "_type": "search",
+      "_source": {
+        "title": "My Saved Search",
+        "description": "",
+        "hits": 0,
+        "columns": [
+          "message",
+          "level"
+        ],
+        "sort": [
+          "@timestamp",
+          "desc"
+        ],
+        "version": 1,
+        "kibanaSavedObjectMeta": {
+          "searchSourceJSON": "{\"index\":\"filebeat-*\",\"highlightAll\":true,\"version\":true,\"query\":{\"language\":\"lucene\",\"query\":\"*\"},\"filter\":[{\"$state\":{\"store\":\"appState\"},\"meta\":{\"alias\":null,\"disabled\":false,\"index\":\"filebeat-*\",\"key\":\"kubernetes.labels.app_kubernetes_io_name\",\"negate\":false,\"params\":{\"query\":\"tap-api\",\"type\":\"phrase\"},\"type\":\"phrase\",\"value\":\"tap-api\"},\"query\":{\"match\":{\"kubernetes.labels.app_kubernetes_io_name\":{\"query\":\"tap-api\",\"type\":\"phrase\"}}}},{\"meta\":{\"index\":\"filebeat-*\",\"negate\":false,\"disabled\":false,\"alias\":null,\"type\":\"phrase\",\"key\":\"kubernetes.labels.app_kubernetes_io_instance\",\"value\":\"tap-api-tag-al\",\"params\":{\"query\":\"tap-api-tag-al\",\"type\":\"phrase\"}},\"query\":{\"match\":{\"kubernetes.labels.app_kubernetes_io_instance\":{\"query\":\"tap-api-tag-al\",\"type\":\"phrase\"}}},\"$state\":{\"store\":\"appState\"}}]}"
+        }
+      }
+    }
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kibana-sidecar-role
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "watch", "list"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kibana-sidecar-account
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kibana-sidecar-rolebind
+roleRef:
+  kind: ClusterRole
+  name: kibana-sidecar-role
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: kibana-sidecar-account
+  namespace: default
