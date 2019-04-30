@@ -134,6 +134,40 @@ def upsertKibanaObject(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPassw
     except Exception as e:
         logger.error("Failed to save all objects because: ", exc_info=e)
 
+def updateWatcherObjects(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPassword, watcherObjects):
+
+    logger.info(f"Creating/Updating in Watcher: {kibanaBaseUrl}: Watcher Object(s) with data: \n{json.dumps(watcherObjects)} ...")
+
+    for watcher in watcherObjects:
+
+        try:
+            if not 'id' in watcher:
+                raise Exception(f"Watcher didn't contain an 'id' property: {json.dumps(watcher)}")
+            watchId = watcher["id"]
+            active = True
+            if 'active' in watcher:
+                active = watcher['active']
+
+            # These parameters shouldn't actually be in the POST to Watcher API.
+            del watcher['id']
+            del watcher['active']
+
+            logger.debug(f"POSTing data:\n{json.dumps(watcher)}")
+
+            res = request(f"{kibanaBaseUrl}/api/watcher/watch/{watchId}", kibanaUsername, kibanaPassword, "POST",
+                          {"active": active}, watcher, {"kbn-xsrf": "kibana-sidecar"})
+            if res.status_code != 200:
+                logger.error(
+                    f"Failed to create Watcher object: {watcher} because request returned status: {res.status_code} and body: {res.text}")
+            else:
+                responseBody = res.json()
+                logger.debug(f"Response from Kibana: {json.dumps(responseBody)}")
+
+                logger.info(f"Watcher with ID: {watchId} saved successfully.")
+        except Exception as e:
+            logger.error(f"Failed to save Watcher with ID: {watchId} because: ", exc_info=e)
+
+
 
 # We want to upload objects in the following order:
 # index-patterns, searches, visualizations, dashboards
@@ -220,13 +254,68 @@ def watchForChanges(label, kibanaBaseUrl, kibanaUsername, kibanaPassword, curren
 
                     objectsToUpload = reorderObjectsToUpload(objectsToUpload)
 
+                    (kibanaObjects, watcherObjects) = separateKibanaFromWatcherObjects(objectsToUpload)
+
                     upsertKibanaObject(f"{metadata.namespace}/{metadata.name}", kibanaBaseUrl, kibanaUsername,
-                                       kibanaPassword, objectsToUpload)
+                                       kibanaPassword, kibanaObjects)
+
+                    watcherObjects = prepareWatcherObjectsForUpload(watcherObjects, generateIdFromTitle)
+
+                    updateWatcherObjects(f"{metadata.namespace}/{metadata.name}", kibanaBaseUrl, kibanaUsername,
+                                       kibanaPassword, watcherObjects)
 
 
 
             except Exception as e:
                 logger.error(f"Failed to process ConfigMap: {metadata.namespace}/{metadata.name} because: ", exc_info=e)
+
+def separateKibanaFromWatcherObjects(objectsArr):
+    kibanaObjects = []
+    watcherObjects = []
+
+    for o in objectsArr:
+        if 'type' in o:
+            kibanaObjects.append(o)
+        elif ('input' in o or 'trigger' in o or 'actions' in o):
+            watcherObjects.append(o)
+        else:
+            logger.warn(f"Couldn't determine type of object for object. Ignoring it. Object Contents: {json.dumps(o)}")
+    return (kibanaObjects, watcherObjects)
+
+def getDefaultWatcherActions():
+    defaultActionsFilePath = os.getenv("DEFAULT_WATCHER_ACTIONS_FILEPATH")
+    logger.info(f"Reading Default Watcher Actions from filepath: {defaultActionsFilePath}")
+    if defaultActionsFilePath:
+        with open(defaultActionsFilePath, 'r') as f:
+            defaultActions = json.load(f)
+            return defaultActions
+    else:
+        return {}
+
+def prepareWatcherObjectsForUpload(watcherObjects, generateIdFromTitle):
+    # Support generating ID from Watcher name
+    if generateIdFromTitle:
+        for o in watcherObjects:
+            if 'name' in o["metadata"]:
+                name = o["metadata"]["name"]
+                newId = generateObjectIdFromTitle(name)
+                logger.debug(f"Generated ID: {newId} from name: {name}")
+                o["id"] = newId
+
+    # Add Default Actions
+    defaultActions = getDefaultWatcherActions()
+    if len(defaultActions) > 0:
+        for o in watcherObjects:
+            logger.info(f"Adding {len(defaultActions)} default actions to Watcher with ID: {o['id']}")
+            if not 'actions' in o:
+                o['actions'] = {}
+
+            for key, value in defaultActions.items():
+                logger.debug(f"Adding default action with key: {key} to Watcher with ID: {o['id']}")
+                o['actions'][key] = value
+
+    return watcherObjects
+
 
 def main():
     logger.info("Starting config map collector")
