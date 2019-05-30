@@ -134,9 +134,9 @@ def upsertKibanaObject(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPassw
     except Exception as e:
         logger.error("Failed to save all objects because: ", exc_info=e)
 
-def updateWatcherObjects(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPassword, watcherObjects):
+def updateWatcherObjects(configMapName, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, watcherObjects):
 
-    logger.info(f"Creating/Updating in Watcher: {kibanaBaseUrl}: Watcher Object(s) with data: \n{json.dumps(watcherObjects)} ...")
+    logger.info(f"Creating/Updating in Watcher: {elasticSearchBaseUrl}: Watcher Object(s) with data: \n{json.dumps(watcherObjects)} ...")
 
     for watcher in watcherObjects:
 
@@ -154,7 +154,7 @@ def updateWatcherObjects(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPas
 
             logger.debug(f"POSTing data:\n{json.dumps(watcher)}")
 
-            res = request(f"{kibanaBaseUrl}/api/watcher/watch/{watchId}", kibanaUsername, kibanaPassword, "POST",
+            res = request(f"{elasticSearchBaseUrl}/api/watcher/watch/{watchId}", kibanaUsername, kibanaPassword, "POST",
                           {"active": active}, watcher, {"kbn-xsrf": "kibana-sidecar"})
             if res.status_code != 200:
                 logger.error(
@@ -208,7 +208,7 @@ def deleteKibanaObject(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPassw
     # TODO Handle generating ID from Title
     # TODO: Delete object from Kibana
 
-def watchForChanges(label, kibanaBaseUrl, kibanaUsername, kibanaPassword, currentNamespace):
+def watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace):
     v1 = client.CoreV1Api()
     w = watch.Watch()
     stream = None
@@ -261,7 +261,7 @@ def watchForChanges(label, kibanaBaseUrl, kibanaUsername, kibanaPassword, curren
 
                     watcherObjects = prepareWatcherObjectsForUpload(watcherObjects, generateIdFromTitle)
 
-                    updateWatcherObjects(f"{metadata.namespace}/{metadata.name}", kibanaBaseUrl, kibanaUsername,
+                    updateWatcherObjects(f"{metadata.namespace}/{metadata.name}", elasticSearchBaseUrl, kibanaUsername,
                                        kibanaPassword, watcherObjects)
 
 
@@ -329,7 +329,16 @@ def main():
         return -1
     if kibanaBaseUrl.endswith("/"):
         kibanaBaseUrl = kibanaBaseUrl[0:-1]
+
+    elasticSearchBaseUrl = os.getenv('ELASTICSEARCH_BASE_URL')
+    if elasticSearchBaseUrl is None:
+        logger.error("Should have added ELASTICSEARCH_BASE_URL as environment variable! Exit")
+        return -1
+    if elasticSearchBaseUrl.endswith("/"):
+        elasticSearchBaseUrl = elasticSearchBaseUrl[0:-1]
+
     logger.info(f"Using Kibana Base URL: {kibanaBaseUrl}")
+    logger.info(f"Using ElasticSearch Base URL: {elasticSearchBaseUrl}")
     logger.info(f"Will load ConfigMaps with label: {label}")
     kibanaUsername = os.getenv('KIBANA_USERNAME')
     kibanaPassword = os.getenv('KIBANA_PASSWORD')
@@ -337,7 +346,7 @@ def main():
     config.load_incluster_config()
     logger.info("Config for cluster api loaded...")
     currentNamespace = open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read()
-    watchForChanges(label, kibanaBaseUrl, kibanaUsername, kibanaPassword, currentNamespace)
+    watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace)
 
 
 if __name__ == '__main__':

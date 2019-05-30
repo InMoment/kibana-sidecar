@@ -60,14 +60,19 @@ By default, this is not enabled. You have to explicitly enable it by adding the 
   - description: The Base URL for your Kibana installation. Everything up to but not including `/api` which would be required to hit the API.
   - required: true
   - type: string
+  
+- `ELASTICSEARCH_BASE_URL`
+  - description: The Base URL for your Elastic Search cluster. Used for Watcher configuration.
+  - required: true
+  - type: string
 
 - `KIBANA_USERNAME`
-  - description: The username to use with the Kibana API
+  - description: The username to use with the Kibana APIs and ElasticSearch APIs
   - required: false
   - type: URI
 
 - `KIBANA_PASSWORD`
-  - description: The password to use with the Kibana API
+  - description: The password to use with the Kibana API and ElasticSearch APIs
   - required: false
   - type: string
 
