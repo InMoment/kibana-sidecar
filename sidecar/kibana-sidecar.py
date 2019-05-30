@@ -45,6 +45,7 @@ def request(url, username, password, method, queryParams, payload, headers={}):
     if url is None:
         logger.info("No url provided. Doing nothing.")
         # If method is not provided use GET as default
+        raise Exception("No url provided")
     elif method == "GET" or method is None:
         res = r.get("%s" % url, auth=auth, params=queryParams, timeout=30, headers=headers)
         logger.info("%s request sent to %s. Response: %d %s" % (method, url, res.status_code, res.reason))
@@ -53,6 +54,13 @@ def request(url, username, password, method, queryParams, payload, headers={}):
         res = r.post("%s" % url, auth=auth, params=queryParams, json=payload, timeout=30, headers=headers)
         logger.info("%s request sent to %s. Response: %d %s" % (method, url, res.status_code, res.reason))
         return res
+    elif method == "PUT":
+        res = r.put("%s" % url, auth=auth, params=queryParams, json=payload, timeout=30, headers=headers)
+        logger.info("%s request sent to %s. Response: %d %s" % (method, url, res.status_code, res.reason))
+        return res
+    else:
+        # If method is not provided use GET as default
+        raise Exception("Unsupported method: " + method)
 
 # Kibana API Saved Object Format is different from the format that you get if you export objects from the UI.
 # So we need to rename a few properties.
@@ -87,12 +95,13 @@ def prepareRecordsInConfigMapForUpload(jsonStrArrOrObj, generateIdFromTitle, old
 
     if generateIdFromTitle:
         for o in transformedData:
-            if 'title' in o["attributes"]:
+            if 'attributes' in o and 'title' in o["attributes"]:
                 title = o["attributes"]["title"]
                 newId = generateObjectIdFromTitle(title)
                 oldIdToNewIdMap[o["id"]] = newId
                 logger.debug(f"Generated ID: {newId} from title: {title}")
                 o["id"] = newId
+
 
     return transformedData
 
@@ -144,19 +153,21 @@ def updateWatcherObjects(configMapName, elasticSearchBaseUrl, kibanaUsername, ki
             if not 'id' in watcher:
                 raise Exception(f"Watcher didn't contain an 'id' property: {json.dumps(watcher)}")
             watchId = watcher["id"]
-            active = True
+            active = "true"
             if 'active' in watcher:
                 active = watcher['active']
 
             # These parameters shouldn't actually be in the POST to Watcher API.
-            del watcher['id']
-            del watcher['active']
+            if 'id' in watcher:
+                del watcher['id']
+            if 'active' in watcher:
+                del watcher['active']
 
             logger.debug(f"POSTing data:\n{json.dumps(watcher)}")
 
-            res = request(f"{elasticSearchBaseUrl}/api/watcher/watch/{watchId}", kibanaUsername, kibanaPassword, "POST",
+            res = request(f"{elasticSearchBaseUrl}/_xpack/watcher/watch/{watchId}", kibanaUsername, kibanaPassword, "PUT",
                           {"active": active}, watcher, {"kbn-xsrf": "kibana-sidecar"})
-            if res.status_code != 200:
+            if res.status_code != 200 and res.status_code != 201:
                 logger.error(
                     f"Failed to create Watcher object: {watcher} because request returned status: {res.status_code} and body: {res.text}")
             else:
@@ -249,12 +260,11 @@ def watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, 
                         deleteKibanaObject(f"{metadata.namespace}/{metadata.name}", kibanaBaseUrl, kibanaUsername, kibanaPassword, filename, data, generateIdFromTitle)
 
                 if len(objectsToUpload) > 0:
-                    if generateIdFromTitle:
-                        objectsToUpload = renameAllIds(oldIdToNewIdMap, objectsToUpload)
-
-                    objectsToUpload = reorderObjectsToUpload(objectsToUpload)
-
                     (kibanaObjects, watcherObjects) = separateKibanaFromWatcherObjects(objectsToUpload)
+                    if generateIdFromTitle:
+                        kibanaObjects = renameAllIds(oldIdToNewIdMap, kibanaObjects)
+
+                    kibanaObjects = reorderObjectsToUpload(kibanaObjects)
 
                     upsertKibanaObject(f"{metadata.namespace}/{metadata.name}", kibanaBaseUrl, kibanaUsername,
                                        kibanaPassword, kibanaObjects)
