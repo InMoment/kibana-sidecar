@@ -31,6 +31,23 @@ You must be using Kibana version `6.4.x` or later
 - Update/Delete objects in Kibana on change of configmap
 - Supports Kibana Basic Authentication
 
+# Docker Repo
+
+Docker Images of every `master` commit are on https://hub.docker.com/r/inmoment/kibana-sidecar/tags
+
+The Docker Image is tagged with both `latest` and a tag specific to the git commit hash and git commit timestamp.
+
+If you want to always pull the latest, you can use:
+
+`docker pull inmoment/kibana-sidecar:latest`
+
+Or to use a specific version, e.g., `20190606.192629-9d03e15`:
+
+`docker pull inmoment/kibana-sidecar:20190606.192629-9d03e15`
+
+It is generally recommended that you NOT use `latest` in any production system because you could have things changing on you without your knowledge.
+
+
 # Usage
 
 Example for a simple deployment can be found in `example.yaml`. Depending on the cluster setup you have to grant yourself admin rights first: `kubectl create clusterrolebinding cluster-admin-binding   --clusterrole cluster-admin   --user $(gcloud config get-value account)`
@@ -110,6 +127,11 @@ An example `ConfigMap` that produces a Saved Search for `kibana-sidecar` log eve
 Run:
 - `docker build . -t kibana-sidecar:latest`
  
+# Continuous Integration
+
+We are using Travis: https://travis-ci.com/InMoment/kibana-sidecar
+
+PRs and `master` builds get built automatically.
 
 # Operational Visibility (ops-viz)
 
