@@ -45,6 +45,7 @@ def request(url, username, password, method, queryParams, payload, headers={}):
     if url is None:
         logger.info("No url provided. Doing nothing.")
         # If method is not provided use GET as default
+        raise Exception("No url provided")
     elif method == "GET" or method is None:
         res = r.get("%s" % url, auth=auth, params=queryParams, timeout=30, headers=headers)
         logger.info("%s request sent to %s. Response: %d %s" % (method, url, res.status_code, res.reason))
@@ -53,6 +54,13 @@ def request(url, username, password, method, queryParams, payload, headers={}):
         res = r.post("%s" % url, auth=auth, params=queryParams, json=payload, timeout=30, headers=headers)
         logger.info("%s request sent to %s. Response: %d %s" % (method, url, res.status_code, res.reason))
         return res
+    elif method == "PUT":
+        res = r.put("%s" % url, auth=auth, params=queryParams, json=payload, timeout=30, headers=headers)
+        logger.info("%s request sent to %s. Response: %d %s" % (method, url, res.status_code, res.reason))
+        return res
+    else:
+        # If method is not provided use GET as default
+        raise Exception("Unsupported method: " + method)
 
 # Kibana API Saved Object Format is different from the format that you get if you export objects from the UI.
 # So we need to rename a few properties.
@@ -87,12 +95,13 @@ def prepareRecordsInConfigMapForUpload(jsonStrArrOrObj, generateIdFromTitle, old
 
     if generateIdFromTitle:
         for o in transformedData:
-            if 'title' in o["attributes"]:
+            if 'attributes' in o and 'title' in o["attributes"]:
                 title = o["attributes"]["title"]
                 newId = generateObjectIdFromTitle(title)
                 oldIdToNewIdMap[o["id"]] = newId
                 logger.debug(f"Generated ID: {newId} from title: {title}")
                 o["id"] = newId
+
 
     return transformedData
 
@@ -134,6 +143,42 @@ def upsertKibanaObject(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPassw
     except Exception as e:
         logger.error("Failed to save all objects because: ", exc_info=e)
 
+def updateWatcherObjects(configMapName, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, watcherObjects):
+
+    logger.info(f"Creating/Updating in Watcher: {elasticSearchBaseUrl}: Watcher Object(s) with data: \n{json.dumps(watcherObjects)} ...")
+
+    for watcher in watcherObjects:
+
+        try:
+            if not 'id' in watcher:
+                raise Exception(f"Watcher didn't contain an 'id' property: {json.dumps(watcher)}")
+            watchId = watcher["id"]
+            active = "true"
+            if 'active' in watcher:
+                active = watcher['active']
+
+            # These parameters shouldn't actually be in the POST to Watcher API.
+            if 'id' in watcher:
+                del watcher['id']
+            if 'active' in watcher:
+                del watcher['active']
+
+            logger.debug(f"POSTing data:\n{json.dumps(watcher)}")
+
+            res = request(f"{elasticSearchBaseUrl}/_xpack/watcher/watch/{watchId}", kibanaUsername, kibanaPassword, "PUT",
+                          {"active": active}, watcher, {"kbn-xsrf": "kibana-sidecar"})
+            if res.status_code != 200 and res.status_code != 201:
+                logger.error(
+                    f"Failed to create Watcher object: {watcher} because request returned status: {res.status_code} and body: {res.text}")
+            else:
+                responseBody = res.json()
+                logger.debug(f"Response from Kibana: {json.dumps(responseBody)}")
+
+                logger.info(f"Watcher with ID: {watchId} saved successfully.")
+        except Exception as e:
+            logger.error(f"Failed to save Watcher with ID: {watchId} because: ", exc_info=e)
+
+
 
 # We want to upload objects in the following order:
 # index-patterns, searches, visualizations, dashboards
@@ -174,7 +219,7 @@ def deleteKibanaObject(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPassw
     # TODO Handle generating ID from Title
     # TODO: Delete object from Kibana
 
-def watchForChanges(label, kibanaBaseUrl, kibanaUsername, kibanaPassword, currentNamespace):
+def watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace):
     v1 = client.CoreV1Api()
     w = watch.Watch()
     stream = None
@@ -215,18 +260,72 @@ def watchForChanges(label, kibanaBaseUrl, kibanaUsername, kibanaPassword, curren
                         deleteKibanaObject(f"{metadata.namespace}/{metadata.name}", kibanaBaseUrl, kibanaUsername, kibanaPassword, filename, data, generateIdFromTitle)
 
                 if len(objectsToUpload) > 0:
+                    (kibanaObjects, watcherObjects) = separateKibanaFromWatcherObjects(objectsToUpload)
                     if generateIdFromTitle:
-                        objectsToUpload = renameAllIds(oldIdToNewIdMap, objectsToUpload)
+                        kibanaObjects = renameAllIds(oldIdToNewIdMap, kibanaObjects)
 
-                    objectsToUpload = reorderObjectsToUpload(objectsToUpload)
+                    kibanaObjects = reorderObjectsToUpload(kibanaObjects)
 
                     upsertKibanaObject(f"{metadata.namespace}/{metadata.name}", kibanaBaseUrl, kibanaUsername,
-                                       kibanaPassword, objectsToUpload)
+                                       kibanaPassword, kibanaObjects)
+
+                    watcherObjects = prepareWatcherObjectsForUpload(watcherObjects, generateIdFromTitle)
+
+                    updateWatcherObjects(f"{metadata.namespace}/{metadata.name}", elasticSearchBaseUrl, kibanaUsername,
+                                       kibanaPassword, watcherObjects)
 
 
 
             except Exception as e:
                 logger.error(f"Failed to process ConfigMap: {metadata.namespace}/{metadata.name} because: ", exc_info=e)
+
+def separateKibanaFromWatcherObjects(objectsArr):
+    kibanaObjects = []
+    watcherObjects = []
+
+    for o in objectsArr:
+        if 'type' in o:
+            kibanaObjects.append(o)
+        elif ('input' in o or 'trigger' in o or 'actions' in o):
+            watcherObjects.append(o)
+        else:
+            logger.warn(f"Couldn't determine type of object for object. Ignoring it. Object Contents: {json.dumps(o)}")
+    return (kibanaObjects, watcherObjects)
+
+def getDefaultWatcherActions():
+    defaultActionsFilePath = os.getenv("DEFAULT_WATCHER_ACTIONS_FILEPATH")
+    logger.info(f"Reading Default Watcher Actions from filepath: {defaultActionsFilePath}")
+    if defaultActionsFilePath:
+        with open(defaultActionsFilePath, 'r') as f:
+            defaultActions = json.load(f)
+            return defaultActions
+    else:
+        return {}
+
+def prepareWatcherObjectsForUpload(watcherObjects, generateIdFromTitle):
+    # Support generating ID from Watcher name
+    if generateIdFromTitle:
+        for o in watcherObjects:
+            if 'name' in o["metadata"]:
+                name = o["metadata"]["name"]
+                newId = generateObjectIdFromTitle(name)
+                logger.debug(f"Generated ID: {newId} from name: {name}")
+                o["id"] = newId
+
+    # Add Default Actions
+    defaultActions = getDefaultWatcherActions()
+    if len(defaultActions) > 0:
+        for o in watcherObjects:
+            logger.info(f"Adding {len(defaultActions)} default actions to Watcher with ID: {o['id']}")
+            if not 'actions' in o:
+                o['actions'] = {}
+
+            for key, value in defaultActions.items():
+                logger.debug(f"Adding default action with key: {key} to Watcher with ID: {o['id']}")
+                o['actions'][key] = value
+
+    return watcherObjects
+
 
 def main():
     logger.info("Starting config map collector")
@@ -240,7 +339,16 @@ def main():
         return -1
     if kibanaBaseUrl.endswith("/"):
         kibanaBaseUrl = kibanaBaseUrl[0:-1]
+
+    elasticSearchBaseUrl = os.getenv('ELASTICSEARCH_BASE_URL')
+    if elasticSearchBaseUrl is None:
+        logger.error("Should have added ELASTICSEARCH_BASE_URL as environment variable! Exit")
+        return -1
+    if elasticSearchBaseUrl.endswith("/"):
+        elasticSearchBaseUrl = elasticSearchBaseUrl[0:-1]
+
     logger.info(f"Using Kibana Base URL: {kibanaBaseUrl}")
+    logger.info(f"Using ElasticSearch Base URL: {elasticSearchBaseUrl}")
     logger.info(f"Will load ConfigMaps with label: {label}")
     kibanaUsername = os.getenv('KIBANA_USERNAME')
     kibanaPassword = os.getenv('KIBANA_PASSWORD')
@@ -248,7 +356,7 @@ def main():
     config.load_incluster_config()
     logger.info("Config for cluster api loaded...")
     currentNamespace = open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read()
-    watchForChanges(label, kibanaBaseUrl, kibanaUsername, kibanaPassword, currentNamespace)
+    watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace)
 
 
 if __name__ == '__main__':

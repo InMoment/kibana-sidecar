@@ -3,7 +3,7 @@
 
 This is a docker container intended to run inside a Kubernetes cluster to collect config maps with a specified label and upload the values as `Saved Objects` to the Kibana API.
 
-This is so that you can automate deploying Kibana searches, visualizations, index-patterns, and dashboards.
+This is so that you can automate deploying Kibana searches, visualizations, index-patterns, dashboards and watchers.
 
 The contained python script is working with the Kubernetes API `1.10` or later and Kibana API `6.4.x` or later
 
@@ -60,14 +60,19 @@ By default, this is not enabled. You have to explicitly enable it by adding the 
   - description: The Base URL for your Kibana installation. Everything up to but not including `/api` which would be required to hit the API.
   - required: true
   - type: string
+  
+- `ELASTICSEARCH_BASE_URL`
+  - description: The Base URL for your Elastic Search cluster. Used for Watcher configuration.
+  - required: true
+  - type: string
 
 - `KIBANA_USERNAME`
-  - description: The username to use with the Kibana API
+  - description: The username to use with the Kibana APIs and ElasticSearch APIs
   - required: false
   - type: URI
 
 - `KIBANA_PASSWORD`
-  - description: The password to use with the Kibana API
+  - description: The password to use with the Kibana API and ElasticSearch APIs
   - required: false
   - type: string
 
@@ -82,6 +87,16 @@ By default, this is not enabled. You have to explicitly enable it by adding the 
   - type: string
   - default: `WARNING`
   - valid values: `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`,
+  
+- `DEFAULT_WATCHER_ACTIONS_FILEPATH`
+  - description: If specified, will be the filepath inside the container where a JSON file containing a JSON object of Default Watcher Actions exists. These actions will be applied to ALL Watcher objects that are deployed.
+  - required: false
+  - type: string
+  - default: ''
+  - NOTE: You should map a Secret or a ConfigMap value into a file in the container, then set this environment variable to that path.
+  - You can specify the `volumes` and `volumeMounts` keys in the Helm Chart to mount in your `Default Watcher Actions` file.
+  - The file should contain a JSON Object of Watcher Actions.
+
 
 ## Helm Chart
 
@@ -110,6 +125,80 @@ An example `ConfigMap` that produces a Saved Search for `kibana-sidecar` log eve
 Run:
 - `docker build . -t kibana-sidecar:latest`
  
+
+# Deploying Elastic Watchers
+
+You can use `kibana-sidecar` to deploy [Elastic Watchers](https://www.elastic.co/guide/en/x-pack/current/watcher-getting-started.html)
+
+The format of the JSON object that you should use in your ConfigMap to configure an Elastic Watcher is based on the [`PUT` API](https://www.elastic.co/guide/en/elasticsearch/reference/6.7/watcher-api-put-watch.html)
+
+It should look like what the `PUT` API expects with the following exceptions:
+
+1) If you are not using the label: `generate_id_from_title: "true"`, you must specify an `id` property at the root of the object.
+2) If you want to make the Watcher inactive when it is deployed, you can set the `active` property at the root of the object to `false`.
+
+e.g.,
+```
+{
+  "id": "my_watcher_id",
+  "active": false,
+  "metadata": {
+    ...
+  },
+  "input": {
+    ...
+  },
+  "condition": {
+    ...
+  },
+  "actions": {
+    ...
+  }
+
+```
+
+## Authorization
+
+Your Kibana user specified by `KIBANA_USERNAME` must have `manage_watcher` cluster privileges. See [Elastic docs](https://www.elastic.co/guide/en/elasticsearch/reference/6.7/watcher-api-put-watch.html#_authorization_98)
+
+## Default Elastic Watcher Actions
+
+Specifying the Actions in every watcher can be annoying, especially if you have different Action configurations for different environments.
+
+This feature allows you to configure the `kibana-sidecar` to have a set of 1 or more Default Watcher Actions.
+
+It will then add all of these actions to every Watcher it deploys.
+
+To use this feature, do the following:
+
+1) Configure a `ConfigMap` or `Secret` to have the content of your Default Actions. This should be a JSON Object with keys for the action name and values for the action definition.
+  e.g.,
+```
+{
+    "opsgenie": {
+        "webhook": {
+            "scheme": "https",
+            "method": "POST",
+            "host": "api.opsgenie.com",
+            "port": 443,
+            "path": "/v1/json/eswatcher",
+            "headers": {
+                "Content-Type": "application/json"
+            },
+            "params": {
+                "apiKey": "sdf-20aefdf-4233s-8d0ddf2-8c2eebd1b7f"
+            },
+            "body": "{{#toJson}}ctx{{/toJson}}"
+        }
+    }
+}
+
+```
+
+2) Mount that `ConfigMap` or `Secret` as a `Volume` using the Helm Chart's `volumes` and `volumeMounts` keys
+
+3) Configure the environment variable `DEFAULT_WATCHER_ACTIONS_FILEPATH` to be the absolute filepath where the JSON file is mounted.
+
 
 # Operational Visibility (ops-viz)
 
