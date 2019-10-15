@@ -270,9 +270,11 @@ def watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, 
                                        kibanaPassword, kibanaObjects)
 
                     watcherObjects = prepareWatcherObjectsForUpload(watcherObjects, generateIdFromTitle)
-
-                    updateWatcherObjects(f"{metadata.namespace}/{metadata.name}", elasticSearchBaseUrl, kibanaUsername,
+                    if len(watcherObjects) > 0:
+                        updateWatcherObjects(f"{metadata.namespace}/{metadata.name}", elasticSearchBaseUrl, kibanaUsername,
                                        kibanaPassword, watcherObjects)
+                    else:
+                        logger.info("No Watcher objects to process")
 
 
 
@@ -356,7 +358,11 @@ def main():
     config.load_incluster_config()
     logger.info("Config for cluster api loaded...")
     currentNamespace = open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read()
-    watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace)
+
+    try:
+        watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace)
+    except Exception as e:
+        logger.error("Caught error while attempting to watch for changes. Re-establishing watch...", exc_info=e)
 
 
 if __name__ == '__main__':
