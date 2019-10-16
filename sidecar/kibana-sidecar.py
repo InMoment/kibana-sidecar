@@ -359,10 +359,11 @@ def main():
     logger.info("Config for cluster api loaded...")
     currentNamespace = open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read()
 
-    try:
-        watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace)
-    except Exception as e:
-        logger.error("Caught error while attempting to watch for changes. Re-establishing watch...", exc_info=e)
+    while True:
+        try:
+            watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace)
+        except Exception as e:
+            logger.error("Caught error while attempting to watch for changes. Re-establishing watch...", exc_info=e)
 
 
 if __name__ == '__main__':
