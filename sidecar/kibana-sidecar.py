@@ -141,7 +141,7 @@ def upsertKibanaObject(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPassw
             if allSuccessful:
                 logger.info(f"All objects from ConfigMap: {configMapName} were saved successfully")
     except Exception as e:
-        logger.error("Failed to save all objects because: ", exc_info=e)
+        logger.error("Failed to save all objects because: ", exc_info=True)
 
 def updateWatcherObjects(configMapName, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, watcherObjects):
 
@@ -176,7 +176,7 @@ def updateWatcherObjects(configMapName, elasticSearchBaseUrl, kibanaUsername, ki
 
                 logger.info(f"Watcher with ID: {watchId} saved successfully.")
         except Exception as e:
-            logger.error(f"Failed to save Watcher with ID: {watchId} because: ", exc_info=e)
+            logger.error(f"Failed to save Watcher with ID: {watchId} because: ", exc_info=True)
 
 
 
@@ -279,7 +279,7 @@ def watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, 
 
 
             except Exception as e:
-                logger.error(f"Failed to process ConfigMap: {metadata.namespace}/{metadata.name} because: ", exc_info=e)
+                logger.error(f"Failed to process ConfigMap: {metadata.namespace}/{metadata.name} because: ", exc_info=True)
 
 def separateKibanaFromWatcherObjects(objectsArr):
     kibanaObjects = []
@@ -363,7 +363,7 @@ def main():
         try:
             watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace)
         except Exception as e:
-            logger.error("Caught error while attempting to watch for changes. Re-establishing watch...", exc_info=e)
+            logger.error("Caught error while attempting to watch for changes. Re-establishing watch...", exc_info=True)
 
 
 if __name__ == '__main__':
