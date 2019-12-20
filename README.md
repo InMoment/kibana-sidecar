@@ -5,7 +5,7 @@ This is a docker container intended to run inside a Kubernetes cluster to collec
 
 This is so that you can automate deploying Kibana searches, visualizations, index-patterns, dashboards and watchers.
 
-The contained python script is working with the Kubernetes API `1.10` or later and Kibana API `6.4.x` or later
+The contained python script is working with the Kubernetes API `1.10` or later and Kibana API `6.4.x` or later `6.x` versions and Kibana `7.0` or later `7.x` versions
 
 # Why?
 
@@ -21,8 +21,8 @@ Run the container created by this repo in a single pod (as a `Deployment` with `
 
 # Prerequisites
 
-You must be using Kibana version `6.4.x` or later
-  - We use the `_bulk_create` API which was added in `6.4`
+You must be using Kibana version `6.4.x` or later `6.x` versions and Kibana `7.0` or later `7.x` versions
+  - We use the `_bulk_create` API which was added in `6.4` and Watcher APIs
 
 # Features
 
