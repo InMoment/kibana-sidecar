@@ -143,9 +143,18 @@ def upsertKibanaObject(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPassw
     except Exception as e:
         logger.error("Failed to save all objects because: ", exc_info=True)
 
-def updateWatcherObjects(configMapName, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, watcherObjects):
+def updateWatcherObjects(configMapName, elasticSearchBaseUrl, elasticMajorVersion, kibanaUsername, kibanaPassword, watcherObjects):
 
     logger.info(f"Creating/Updating in Watcher: {elasticSearchBaseUrl}: Watcher Object(s) with data: \n{json.dumps(watcherObjects)} ...")
+
+    watcherBaseUrl = None
+    if elasticMajorVersion == "6":
+        watcherBaseUrl = f"{elasticSearchBaseUrl}/_xpack/watcher/watch"
+    elif elasticMajorVersion == "7":
+        watcherBaseUrl = f"{elasticSearchBaseUrl}/_watcher/watch"
+    else:
+        logger.error(f"Unsupported Elastic Search Major Version: {elasticMajorVersion}")
+        raise Exception(f"Unsupported Elastic Search Major Version: {elasticMajorVersion}")
 
     for watcher in watcherObjects:
 
@@ -165,7 +174,7 @@ def updateWatcherObjects(configMapName, elasticSearchBaseUrl, kibanaUsername, ki
 
             logger.debug(f"POSTing data:\n{json.dumps(watcher)}")
 
-            res = request(f"{elasticSearchBaseUrl}/_xpack/watcher/watch/{watchId}", kibanaUsername, kibanaPassword, "PUT",
+            res = request(f"{watcherBaseUrl}/{watchId}", kibanaUsername, kibanaPassword, "PUT",
                           {"active": active}, watcher, {"kbn-xsrf": "kibana-sidecar"})
             if res.status_code != 200 and res.status_code != 201:
                 logger.error(
@@ -219,7 +228,7 @@ def deleteKibanaObject(configMapName, kibanaBaseUrl, kibanaUsername, kibanaPassw
     # TODO Handle generating ID from Title
     # TODO: Delete object from Kibana
 
-def watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace):
+def watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace, elasticMajorVersion):
     v1 = client.CoreV1Api()
     w = watch.Watch()
     stream = None
@@ -271,7 +280,7 @@ def watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, 
 
                     watcherObjects = prepareWatcherObjectsForUpload(watcherObjects, generateIdFromTitle)
                     if len(watcherObjects) > 0:
-                        updateWatcherObjects(f"{metadata.namespace}/{metadata.name}", elasticSearchBaseUrl, kibanaUsername,
+                        updateWatcherObjects(f"{metadata.namespace}/{metadata.name}", elasticSearchBaseUrl, elasticMajorVersion, kibanaUsername,
                                        kibanaPassword, watcherObjects)
                     else:
                         logger.info("No Watcher objects to process")
@@ -352,8 +361,32 @@ def main():
     logger.info(f"Using Kibana Base URL: {kibanaBaseUrl}")
     logger.info(f"Using ElasticSearch Base URL: {elasticSearchBaseUrl}")
     logger.info(f"Will load ConfigMaps with label: {label}")
+
+
+
     kibanaUsername = os.getenv('KIBANA_USERNAME')
     kibanaPassword = os.getenv('KIBANA_PASSWORD')
+
+    elasticMajorVersion = None
+
+    logger.info("Figuring out what version of Elastic Search we are dealing with ...")
+    res = request(elasticSearchBaseUrl + "/", kibanaUsername, kibanaPassword, "GET", None, None)
+    if res.status_code != 200:
+        logger.error(
+            f"Failed to identify Elastic Search version because request returned status: {res.status_code} and body: {res.text}")
+    else:
+        responseBody = res.json()
+        elasticVersion = responseBody['version']['number']
+        elasticMajorVersion = elasticVersion.split(".")[0]
+        logger.info(f"Found Elastic Search Version: {elasticVersion} with Major Version: {elasticMajorVersion}")
+
+    if elasticMajorVersion is None:
+        logger.error("Could not determine Elastic Search Major Version. Aborting ...")
+        return
+
+    if elasticMajorVersion != "6" and elasticMajorVersion != "7":
+        logger.error("kibana-sidecar currently only supports Elastic 6 and Elastic 7. Aborting ...")
+        return
 
     config.load_incluster_config()
     logger.info("Config for cluster api loaded...")
@@ -361,7 +394,7 @@ def main():
 
     while True:
         try:
-            watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace)
+            watchForChanges(label, kibanaBaseUrl, elasticSearchBaseUrl, kibanaUsername, kibanaPassword, currentNamespace, elasticMajorVersion)
         except Exception as e:
             logger.error("Caught error while attempting to watch for changes. Re-establishing watch...", exc_info=True)
 
