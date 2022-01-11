@@ -1,0 +1,32 @@
+name: Docker
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build-and-push:
+    env:
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build Docker image
+        run: |
+          imageTag=$(git show --quiet --pretty=format:%cd-%h --date=format-local:%Y%m%d.%H%M%S)
+
+          # make $imageTag available in subsequent steps
+          echo "imageTag=$imageTag" >> $GITHUB_ENV
+
+          docker build -t inmoment/kibana-sidecar:$imageTag .
+          docker tag inmoment/kibana-sidecar:$imageTag inmoment/kibana-sidecar:latest
+
+      - name: Push Docker image
+        if: ${{ github.event_name != 'pull_request' }}
+        run: bash docker-push.sh "${{ env.imageTag }}"
