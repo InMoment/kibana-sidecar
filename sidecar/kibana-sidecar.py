@@ -150,7 +150,7 @@ def updateWatcherObjects(configMapName, elasticSearchBaseUrl, elasticMajorVersio
     watcherBaseUrl = None
     if elasticMajorVersion == "6":
         watcherBaseUrl = f"{elasticSearchBaseUrl}/_xpack/watcher/watch"
-    elif elasticMajorVersion == "7":
+    elif elasticMajorVersion == "7" or elasticMajorVersion == "8":
         watcherBaseUrl = f"{elasticSearchBaseUrl}/_watcher/watch"
     else:
         logger.error(f"Unsupported Elastic Search Major Version: {elasticMajorVersion}")
@@ -384,8 +384,8 @@ def main():
         logger.error("Could not determine Elastic Search Major Version. Aborting ...")
         return
 
-    if elasticMajorVersion != "6" and elasticMajorVersion != "7":
-        logger.error("kibana-sidecar currently only supports Elastic 6 and Elastic 7. Aborting ...")
+    if elasticMajorVersion != "6" and elasticMajorVersion != "7" and elasticMajorVersion != "8":
+        logger.error("kibana-sidecar currently only supports Elastic 6, 7, 8. Aborting ...")
         return
 
     config.load_incluster_config()
